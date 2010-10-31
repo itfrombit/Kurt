@@ -57,10 +57,10 @@
 (set sessionCookies (dict))
 (set friends (array))
 
-(macro htmlpage (title body)
+(macro htmlpage (title *body)
      `(progn (REQUEST setContentType:"text/html")
              (&html (&head (&title ,title))
-                    (&body ,body))))
+                    (&body ,@*body))))
 
 
 ;; front page.
