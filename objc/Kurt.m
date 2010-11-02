@@ -138,6 +138,18 @@ static void sig_int(int sig)
     event_base_dispatch(event_base);
 }
 
+- (void) start
+{
+    [NSThread detachNewThreadSelector:@selector(run)
+                             toTarget:self
+                           withObject:nil];
+}
+
+- (void) stop
+{
+    event_base_loopexit(gevent_base, NULL);
+}
+
 - (void) dealloc
 {
     evhttp_free(httpd);

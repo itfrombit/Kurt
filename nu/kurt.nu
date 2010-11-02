@@ -99,7 +99,13 @@
         _kurt)
      
      (+ (void) run is
-        ((Kurt kurt) run)))
+        ((Kurt kurt) run))
+     
+     (+ (void) start is
+        ((Kurt kurt) start))
+     
+     (+ (void) stop is
+        ((Kurt kurt) stop)))
 
 (Kurt setMimeTypes:
       (dict "ai"    "application/postscript"
