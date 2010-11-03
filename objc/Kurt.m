@@ -63,6 +63,11 @@ BOOL verbose_kurt = NO;
     struct event_base *event_base;
     struct evhttp *httpd;
     id<NSObject,KurtDelegate> delegate;
+
+    NSThread *workerThread;
+    struct event *watchdogEvent;
+    int watchdogRecvFd;
+    int watchdogSendFd;
 }
 
 - (id) delegate;
@@ -102,6 +107,12 @@ static void kurt_request_handler(struct evhttp_request *req, void *kurt_pointer)
     httpd = evhttp_new(event_base);
     evhttp_set_gencb(httpd, kurt_request_handler, self);
     delegate = nil;
+
+    workerThread = nil;
+    watchdogEvent = NULL;
+    watchdogRecvFd = -1;
+    watchdogSendFd = -1;
+
     return self;
 }
 
@@ -138,16 +149,65 @@ static void sig_int(int sig)
     event_base_dispatch(event_base);
 }
 
+static void watchdogCallback(int fd, short what, void *arg)
+{
+    NSLog(@"Watchdog event received. Stopping Kurt.");
+    event_base_loopexit(gevent_base, NULL);
+    ConcreteKurt* kurtObject = (ConcreteKurt*)arg;
+    [kurtObject performSelectorOnMainThread:@selector(cleanupWorkerThread) withObject:nil waitUntilDone:NO];
+}
+
 - (void) start
 {
-    [NSThread detachNewThreadSelector:@selector(run)
-                             toTarget:self
-                           withObject:nil];
+    if (!workerThread) {
+        int pipeFds[2];
+        if (pipe(pipeFds) != 0)
+        {
+            NSLog(@"Can't create watchdog pipe. Kurt not started.");
+            return;
+        }
+
+        watchdogRecvFd = pipeFds[0];
+        watchdogSendFd = pipeFds[1];
+
+        watchdogEvent = event_new(gevent_base, watchdogRecvFd, EV_READ, watchdogCallback, (void*)self);
+        event_add(watchdogEvent, NULL);
+
+        workerThread = [[NSThread alloc] initWithTarget:self
+                                               selector:@selector(run)
+                                                 object:nil];
+        [workerThread start];
+    }
+    else {
+        NSLog(@"Kurt is already running.");
+    }
+}
+
+- (void) cleanupWorkerThread
+{
+    if (workerThread)
+    {
+        NSLog(@"Cleaning up worker thread.");
+        event_del(watchdogEvent);
+        event_free(watchdogEvent);
+        watchdogEvent = NULL;
+        [workerThread release];
+        workerThread = nil;
+        close(watchdogRecvFd);
+        close(watchdogSendFd);
+        watchdogRecvFd = -1;
+        watchdogSendFd = -1;
+    }
 }
 
 - (void) stop
 {
-    event_base_loopexit(gevent_base, NULL);
+    if (workerThread) {
+        write(watchdogSendFd, "", 1);
+    }
+    else {
+        NSLog(@"Kurt is not running.");
+    }
 }
 
 - (void) dealloc
